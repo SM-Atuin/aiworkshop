@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Coffee Orders Dashboard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            status: { wait: '#f59e0b', progress: '#3b82f6', ready: '#10b981', cancelled: '#ef4444' },
+            customer: {
+              new: '#8b5cf6',      // violet-500
+              regular: '#0ea5e9',  // sky-500
+              loyalty: '#059669'   // emerald-600
+            }
+          },
+          boxShadow: { soft: '0 10px 24px -12px rgba(0,0,0,.25)' }
+        }
+      }
+    }
+  </script>
+  <style>
+    .card-new { background: #f5f3ff; border-color: #ddd6fe; }       /* violet-50/200 */
+    .card-regular { background: #f0f9ff; border-color: #bae6fd; }   /* sky-50/200 */
+    .card-loyalty { background: #ecfdf5; border-color: #a7f3d0; }   /* emerald-50/200 */
+    .card-cancelled { background: #fef2f2; border-color: #fecaca; } /* red-50/200 */
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-800 min-h-screen">
+  <!-- Top Bar -->
+  <header class="sticky top-0 z-10 bg-white/80 backdrop-blur border-b border-slate-200">
+    <div class="max-w-6xl mx-auto px-4 py-3 flex items-center gap-3">
+      <div class="flex items-center gap-2 mr-auto">
+        <span class="w-9 h-9 rounded-xl bg-emerald-500 text-white grid place-items-center shadow-soft">☕</span>
+        <h1 class="text-xl font-semibold">Coffee Orders Dashboard</h1>
+      </div>
+      <button id="addDemo" class="px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm shadow-soft">Add Demo Order</button>
+      <button id="reset" class="px-3 py-2 rounded-xl bg-white hover:bg-slate-50 border border-slate-200 text-sm">Reset</button>
+    </div>
+  </header>
+
+  <!-- Summary -->
+  <section class="max-w-6xl mx-auto px-4 mt-6 grid grid-cols-1 sm:grid-cols-3 gap-3">
+    <div class="p-4 bg-white rounded-2xl border border-slate-100 shadow-soft">
+      <div class="text-xs uppercase text-slate-500">Total</div>
+      <div id="sumTotal" class="text-2xl font-semibold">0</div>
+    </div>
+    <div class="p-4 bg-white rounded-2xl border border-slate-100 shadow-soft">
+      <div class="text-xs uppercase text-slate-500">Pending</div>
+      <div id="sumPending" class="text-2xl font-semibold">0</div>
+    </div>
+    <div class="p-4 bg-white rounded-2xl border border-slate-100 shadow-soft">
+      <div class="text-xs uppercase text-slate-500">Ready</div>
+      <div id="sumReady" class="text-2xl font-semibold">0</div>
+    </div>
+  </section>
+
+  <!-- Legend -->
+  <section class="max-w-6xl mx-auto px-4 mt-4">
+    <div class="flex flex-wrap items-center gap-4 text-xs text-slate-600">
+      <div class="font-semibold mr-1">Legend:</div>
+      <div class="inline-flex items-center gap-1"><span class="w-3 h-3 rounded bg-amber-500"></span> Waiting</div>
+      <div class="inline-flex items-center gap-1"><span class="w-3 h-3 rounded bg-blue-500"></span> In Progress</div>
+      <div class="inline-flex items-center gap-1"><span class="w-3 h-3 rounded bg-emerald-500"></span> Ready</div>
+      <div class="inline-flex items-center gap-1"><span class="w-3 h-3 rounded bg-red-500"></span> Cancelled</div>
+      <span class="mx-2">•</span>
+      <div class="inline-flex items-center gap-1"><span class="w-4 h-4 grid place-items-center"><span class="text-red-600">☕</span></span> Pending ≥ 10m</div>
+      <span class="mx-2">•</span>
+      <div class="inline-flex items-center gap-2">
+        <span class="px-2 py-1 rounded-lg text-[11px] border card-new">New</span>
+        <span class="px-2 py-1 rounded-lg text-[11px] border card-regular">Regular</span>
+        <span class="px-2 py-1 rounded-lg text-[11px] border card-loyalty">Loyalty</span>
+      </div>
+    </div>
+    <div class="text-[11px] text-slate-500 mt-2">
+      Color codes — New: <span class="text-violet-600">violet-50/200</span>, Regular: <span class="text-sky-600">sky-50/200</span>, Loyalty: <span class="text-emerald-600">emerald-50/200</span>, Cancelled: <span class="text-red-600">red-50/200</span>.
+    </div>
+  </section>
+
+  <!-- Orders Grid -->
+  <main class="max-w-6xl mx-auto px-4 py-6">
+    <div id="ordersGrid" class="grid gap-4 grid-cols-1 sm:grid-cols-2 xl:grid-cols-3"></div>
+    <div id="emptyState" class="hidden text-center p-10 border-2 border-dashed border-slate-200 rounded-2xl bg-white">
+      <div class="text-4xl mb-2">🥐</div>
+      <p class="text-slate-600">No orders yet. Click <span class="font-medium">Add Demo Order</span>.</p>
+    </div>
+  </main>
+
+  <script>
+    // ===== Utilities & Data =====
+    const INR = (n) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(n).replace(/\u20B9\s?/, '₹');
+    const fmtTime = (d) => new Intl.DateTimeFormat(undefined, { hour:'2-digit', minute:'2-digit' }).format(d);
+    const uid = () => Math.random().toString(36).slice(2,9);
+
+    const MENU = {
+      drinks: [
+        { name: 'Espresso', price: 120 },
+        { name: 'Americano', price: 150 },
+        { name: 'Cappuccino', price: 180 },
+        { name: 'Latte', price: 190 },
+        { name: 'Mocha', price: 210 }
+      ],
+      pastries: [
+        { name: 'Croissant', price: 130 },
+        { name: 'Blueberry Muffin', price: 140 },
+        { name: 'Cinnamon Roll', price: 170 }
+      ]
+    };
+    const PMTS = ['Cash','Card','UPI'];
+
+    // Customer segments & card styles
+    const CUSTOMER_TYPES = ['new','regular'];
+
+    let orders = [];
+
+    // ===== Demo Generators =====
+    const pick = arr => arr[Math.floor(Math.random()*arr.length)];
+    const randName = () => pick(['Aarav','Diya','Kabir','Ishaan','Anya','Veer','Maya','Riya','Arjun','Sanya','Rohan','Zara']) + ' ' + pick(['S.','K.','M.','B.']);
+    function randItems(){
+      const out = [];
+      const n = 1 + Math.floor(Math.random()*3);
+      for(let i=0;i<n;i++) out.push(pick([...MENU.drinks, ...MENU.pastries]));
+      return out.map(x=>({ name:x.name, price:x.price, qty:1 }));
+    }
+    const totalFor = (o) => o.items.reduce((s,it)=>s+it.price*it.qty,0);
+
+    function makeOrder(){
+      const now = new Date();
+      const type = pick(CUSTOMER_TYPES);
+      const loyalty = Math.random() < 0.35; // ~35% loyalty members in demo
+      const o = {
+        id: uid(),
+        customer: randName(),
+        items: randItems(),
+        status: 'waiting', // waiting | in_progress | ready | cancelled
+        payment: pick(PMTS),
+        customerType: loyalty ? 'loyalty' : type, // loyalty overrides
+        loyaltyMember: loyalty,
+        createdAt: now.toISOString(),
+        updatedAt: now.toISOString()
+      };
+      o.total = totalFor(o);
+      return o;
+    }
+
+    // ===== Rendering =====
+    const grid = document.getElementById('ordersGrid');
+    const empty = document.getElementById('emptyState');
+    const sumTotal = document.getElementById('sumTotal');
+    const sumPending = document.getElementById('sumPending');
+    const sumReady = document.getElementById('sumReady');
+
+    function pill(st){
+      const map = { waiting:['Waiting','bg-amber-500'], in_progress:['In Progress','bg-blue-500'], ready:['Ready','bg-emerald-500'], cancelled:['Cancelled','bg-red-500'] };
+      const [label, clr] = map[st] || map.waiting;
+      return `<span class="px-2 py-1 rounded-full text-xs text-white ${clr}">${label}</span>`;
+    }
+
+    function since(iso){
+      const ms = Date.now() - new Date(iso).getTime();
+      const m = Math.floor(ms/60000), s = Math.floor((ms%60000)/1000);
+      return { label: m>0? `${m}m ${s}s ago` : `${s}s ago`, minutes: m };
+    }
+
+    function customerBadge(o){
+      const map = {
+        loyalty: ['Loyalty', 'bg-emerald-100 text-emerald-800 border-emerald-200'],
+        regular: ['Regular', 'bg-sky-100 text-sky-800 border-sky-200'],
+        new: ['New', 'bg-violet-100 text-violet-800 border-violet-200']
+      };
+      const [label, cls] = map[o.customerType] || map.regular;
+      return `<span class="px-2 py-1 rounded-lg border text-[11px] ${cls}">${label}</span>`;
+    }
+
+    function cardClass(o){
+      if (o.status==='cancelled') return 'card-cancelled';
+      if (o.customerType==='loyalty') return 'card-loyalty';
+      if (o.customerType==='new') return 'card-new';
+      return 'card-regular';
+    }
+
+    function render(){
+      grid.innerHTML = '';
+      empty.classList.toggle('hidden', orders.length>0);
+      const sorted = [...orders].sort((a,b)=> new Date(b.createdAt)-new Date(a.createdAt));
+      for(const o of sorted){
+        const li = o.items.map(it=>`<li class='flex justify-between'><span>${it.name} × ${it.qty}</span><span class='text-slate-500'>${INR(it.price*it.qty)}</span></li>`).join('');
+        const disabled = o.status==='ready' || o.status==='cancelled';
+        const waited = since(o.createdAt);
+        const needsRedMug = (o.status==='waiting' || o.status==='in_progress') && waited.minutes >= 10;
+        const card = document.createElement('div');
+        card.className = `p-4 rounded-2xl shadow-soft border flex flex-col gap-3 bg-white ${cardClass(o)}`;
+        card.innerHTML = `
+          <div class='flex items-start justify-between gap-2'>
+            <div class='flex items-center gap-2'>
+              <div>
+                <div class='text-xs text-slate-500'>Customer</div>
+                <div class='font-semibold text-lg'>${o.customer}</div>
+              </div>
+              ${customerBadge(o)}
+            </div>
+            <div class='text-right'>
+              <div class='inline-flex items-center gap-2'>
+                ${needsRedMug ? `<span title='Pending ≥ 10 minutes' class='text-red-600 text-lg'>☕</span>` : ''}
+                ${pill(o.status)}
+              </div>
+              <div class='text-xs text-slate-500 mt-1'>${new Date(o.createdAt).toLocaleDateString()} • ${fmtTime(new Date(o.createdAt))}</div>
+            </div>
+          </div>
+          <ul class='text-sm divide-y divide-slate-100'>${li}</ul>
+          <div class='flex items-center justify-between text-sm'>
+            <div class='text-slate-500'>Payment: <span class='font-medium text-slate-700'>${o.payment}</span></div>
+            <div class='font-semibold'>${INR(o.total)}</div>
+          </div>
+          <div class='flex items-center justify-between text-xs text-slate-500'>
+            <span>Updated ${since(o.updatedAt).label}</span>
+            <span>Waiting ${waited.label}</span>
+          </div>
+          <div class='flex flex-wrap gap-2'>
+            <button data-act='start' data-id='${o.id}' class='px-3 py-2 rounded-xl border text-sm ${o.status==='waiting' ? 'bg-amber-50 border-amber-200 text-amber-800 hover:bg-amber-100' : 'bg-slate-50 border-slate-200 text-slate-400'}' ${o.status!=='waiting'?'disabled':''}>Start</button>
+            <button data-act='ready' data-id='${o.id}' class='px-3 py-2 rounded-xl border text-sm ${o.status!=='ready' && o.status!=='cancelled' ? 'bg-emerald-50 border-emerald-200 text-emerald-800 hover:bg-emerald-100' : 'bg-slate-50 border-slate-200 text-slate-400'}' ${disabled?'disabled':''}>Mark Ready</button>
+            <button data-act='cancel' data-id='${o.id}' class='px-3 py-2 rounded-xl border text-sm ${o.status!=='cancelled' && o.status!=='ready' ? 'bg-red-50 border-red-200 text-red-700 hover:bg-red-100' : 'bg-slate-50 border-slate-200 text-slate-400'}' ${disabled?'disabled':''}>Cancel</button>
+            ${o.status==='cancelled' ? `<button data-act='restore' data-id='${o.id}' class='px-3 py-2 rounded-xl border text-sm bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'>Restore</button>` : ''}
+          </div>
+        `;
+        grid.appendChild(card);
+      }
+
+      // Summary
+      const total = orders.length;
+      const ready = orders.filter(o=>o.status==='ready').length;
+      const pending = orders.filter(o=>o.status==='waiting' || o.status==='in_progress').length;
+      sumTotal.textContent = total;
+      sumPending.textContent = pending;
+      sumReady.textContent = ready;
+    }
+
+    // ===== Actions =====
+    document.getElementById('addDemo').addEventListener('click', ()=>{ orders.push(makeOrder()); render(); });
+    document.getElementById('reset').addEventListener('click', ()=>{ orders = []; render(); });
+
+    document.getElementById('ordersGrid').addEventListener('click',(e)=>{
+      const btn = e.target.closest('button[data-act]');
+      if(!btn) return;
+      const id = btn.getAttribute('data-id');
+      const act = btn.getAttribute('data-act');
+      const o = orders.find(x=>x.id===id);
+      if(!o) return;
+      if(act==='start' && o.status==='waiting') o.status='in_progress';
+      if(act==='ready' && (o.status==='waiting' || o.status==='in_progress')) o.status='ready';
+      if(act==='cancel' && o.status!=='ready') o.status='cancelled';
+      if(act==='restore' && o.status==='cancelled') o.status='waiting';
+      o.updatedAt = new Date().toISOString();
+      render();
+    });
+
+    // keep the "ago" labels fresh
+    setInterval(()=>{ if(orders.length) render(); }, 10000);
+
+    // Seed a couple on first load
+    orders.push(makeOrder(), makeOrder(), makeOrder());
+    render();
+  </script>
+</body>
+</html>
